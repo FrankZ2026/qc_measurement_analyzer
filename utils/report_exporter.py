@@ -18,16 +18,38 @@ def _safe_sheet_name(name: str) -> str:
     return (cleaned or "Sheet")[:31]
 
 
-def _autosize(writer: pd.ExcelWriter, sheet_name: str, df: pd.DataFrame):
+def _autosize(writer, sheet_name, df):
+    """
+    Safely adjust Excel column widths.
+    安全调整 Excel 列宽，避免数字、空值或特殊数据导致导出失败。
+    """
     worksheet = writer.sheets[sheet_name]
-    if df is None or df.empty:
-        worksheet.set_column(0, 0, 28)
-        return
 
-    for col_idx, column in enumerate(df.columns):
-        values = df[column].astype(str).head(200).tolist()
-        width = min(max([len(str(column)), *[len(str(v)) for v in values]]) + 2, 52)
-        worksheet.set_column(col_idx, col_idx, width)
+    for idx, column in enumerate(df.columns):
+        try:
+            max_len = len(str(column))
+
+            for value in df[column].dropna().tolist():
+                try:
+                    value_len = len(str(value))
+                except Exception:
+                    value_len = 0
+
+                if value_len > max_len:
+                    max_len = value_len
+
+            width = max_len + 2
+
+            if width > 52:
+                width = 52
+
+            if width < 10:
+                width = 10
+
+            worksheet.set_column(idx, idx, width)
+
+        except Exception:
+            worksheet.set_column(idx, idx, 18)
 
 
 def _write_df(writer: pd.ExcelWriter, sheet_name: str, df: pd.DataFrame | None, index: bool = False):
