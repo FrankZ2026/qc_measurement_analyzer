@@ -26,7 +26,7 @@ def _autosize(writer: pd.ExcelWriter, sheet_name: str, df: pd.DataFrame):
 
     for col_idx, column in enumerate(df.columns):
         values = df[column].astype(str).head(200).tolist()
-        width = min(max([len(str(column)), *[len(v) for v in values]]) + 2, 52)
+        width = min(max([len(str(column)), *[len(str(v)) for v in values]]) + 2, 52)
         worksheet.set_column(col_idx, col_idx, width)
 
 
