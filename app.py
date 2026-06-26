@@ -11,11 +11,7 @@ from utils.charts import box_plot, fig_to_png_bytes, histogram_with_normal_curve
 from utils.conclusions import attach_capability_grades, build_overall_conclusion
 from utils.data_loader import numeric_profile, read_uploaded_file
 from utils.normality import analyze_normality_for_columns
-from utils.report_exporter import (
-    create_summary_report as create_summary_excel,
-    create_complete_analysis_excel,
-    create_charts_zip,
-)
+from utils.report_exporter import create_summary_report as create_summary_excel, create_complete_analysis_excel, create_charts_zip
 from utils.statistics import analyze_measurements, rank_group_results
 
 
