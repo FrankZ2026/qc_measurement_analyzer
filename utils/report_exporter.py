@@ -1,208 +1,210 @@
-from **future** import annotations
-
 import io
 import re
 import zipfile
-from typing import Dict, List
 
 import pandas as pd
 
-def safe_filename(name: str) -> str:
-cleaned = re.sub(r"[^A-Za-z0-9.*-]+", "*", str(name)).strip("_")
-return cleaned or "measurement"
 
-def _safe_sheet_name(name: str) -> str:
-"""
-Excel sheet name must be <= 31 chars and cannot contain: []:*?/
-"""
-cleaned = re.sub(r"[[]:*?/\]", " ", str(name)).strip()
-return (cleaned or "Sheet")[:31]
+def safe_filename(name):
+    cleaned = re.sub(r"[^A-Za-z0-9._-]+", "_", str(name)).strip("_")
+    if cleaned:
+        return cleaned
+    return "measurement"
 
-def _autosize(writer, sheet_name: str, df: pd.DataFrame) -> None:
-"""
-Safely adjust Excel column widths.
-安全调整 Excel 列宽，避免数字、空值或特殊数据导致导出失败。
-"""
-try:
-worksheet = writer.sheets[sheet_name]
-except Exception:
-return
 
-```
-try:
-    columns = list(df.columns)
-except Exception:
-    return
+def _safe_sheet_name(name):
+    """
+    Excel sheet name must be <= 31 chars and cannot contain: []:*?/\
+    """
+    cleaned = re.sub(r"[\[\]\:\*\?\/\\]", " ", str(name)).strip()
+    if not cleaned:
+        cleaned = "Sheet"
+    return cleaned[:31]
 
-for idx, column in enumerate(columns):
+
+def _autosize(writer, sheet_name, df):
+    """
+    Safely adjust Excel column widths.
+    """
     try:
-        max_len = len(str(column))
-
-        series = df[column]
-        values = series.dropna().tolist()
-
-        for value in values:
-            try:
-                value_len = len(str(value))
-            except Exception:
-                value_len = 0
-
-            if value_len > max_len:
-                max_len = value_len
-
-        width = max_len + 2
-        width = min(width, 52)
-        width = max(width, 10)
-
-        worksheet.set_column(idx, idx, width)
-
+        worksheet = writer.sheets[sheet_name]
     except Exception:
-        try:
-            worksheet.set_column(idx, idx, 18)
-        except Exception:
-            pass
-```
+        return
 
-def _write_df(
-writer: pd.ExcelWriter,
-sheet_name: str,
-df: pd.DataFrame | None,
-index: bool = False,
-) -> None:
-safe_name = _safe_sheet_name(sheet_name)
-
-```
-workbook = writer.book
-
-header_format = workbook.add_format(
-    {
-        "bold": True,
-        "bg_color": "#1F4E79",
-        "font_color": "#FFFFFF",
-        "border": 1,
-        "text_wrap": True,
-    }
-)
-
-empty_df = pd.DataFrame({"Message / 提示": ["No data available / 暂无数据"]})
-target = df if df is not None and not df.empty else empty_df
-
-target.to_excel(writer, sheet_name=safe_name, index=index)
-
-worksheet = writer.sheets[safe_name]
-
-for col_idx, value in enumerate(target.columns):
     try:
-        worksheet.write(0, col_idx, str(value), header_format)
+        columns = list(df.columns)
+    except Exception:
+        return
+
+    for idx, column in enumerate(columns):
+        try:
+            max_len = len(str(column))
+
+            values = df[column].dropna().tolist()
+            for value in values:
+                try:
+                    value_len = len(str(value))
+                except Exception:
+                    value_len = 0
+
+                if value_len > max_len:
+                    max_len = value_len
+
+            width = max_len + 2
+
+            if width > 52:
+                width = 52
+
+            if width < 10:
+                width = 10
+
+            worksheet.set_column(idx, idx, width)
+
+        except Exception:
+            try:
+                worksheet.set_column(idx, idx, 18)
+            except Exception:
+                pass
+
+
+def _write_df(writer, sheet_name, df, index=False):
+    safe_name = _safe_sheet_name(sheet_name)
+
+    if df is None:
+        target = pd.DataFrame({"Message / 提示": ["No data available / 暂无数据"]})
+    elif isinstance(df, pd.DataFrame) and df.empty:
+        target = pd.DataFrame({"Message / 提示": ["No data available / 暂无数据"]})
+    else:
+        target = df
+
+    if not isinstance(target, pd.DataFrame):
+        try:
+            target = pd.DataFrame(target)
+        except Exception:
+            target = pd.DataFrame({"Message / 提示": [str(target)]})
+
+    target.to_excel(writer, sheet_name=safe_name, index=index)
+
+    worksheet = writer.sheets[safe_name]
+    workbook = writer.book
+
+    try:
+        header_format = workbook.add_format(
+            {
+                "bold": True,
+                "bg_color": "#1F4E79",
+                "font_color": "#FFFFFF",
+                "border": 1,
+                "text_wrap": True,
+            }
+        )
+
+        for col_idx, value in enumerate(target.columns):
+            worksheet.write(0, col_idx, str(value), header_format)
     except Exception:
         pass
 
-try:
-    worksheet.freeze_panes(1, 0)
-except Exception:
-    pass
+    try:
+        worksheet.freeze_panes(1, 0)
+    except Exception:
+        pass
 
-try:
-    worksheet.autofilter(0, 0, len(target), max(len(target.columns) - 1, 0))
-except Exception:
-    pass
+    try:
+        worksheet.autofilter(0, 0, len(target), max(len(target.columns) - 1, 0))
+    except Exception:
+        pass
 
-_autosize(writer, safe_name, target)
-```
+    _autosize(writer, safe_name, target)
 
-def create_summary_report(
-stats_df: pd.DataFrame,
-normality_df: pd.DataFrame,
-conclusions: List[Dict[str, str]],
-group_df: pd.DataFrame | None = None,
-) -> bytes:
-output = io.BytesIO()
 
-```
-with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
-    conclusion_df = (
-        pd.DataFrame(conclusions)
-        if conclusions
-        else pd.DataFrame(
+def create_summary_report(stats_df, normality_df, conclusions, group_df=None):
+    output = io.BytesIO()
+
+    with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
+        overview = pd.DataFrame(
             {
-                "English": ["No conclusion available."],
-                "中文": ["暂无结论。"],
+                "Field / 字段": [
+                    "Generated By / 生成工具",
+                    "Report Type / 报告类型",
+                ],
+                "Value / 内容": [
+                    "QC Measurement Capability Analyzer",
+                    "Excel Summary Report",
+                ],
             }
         )
-    )
 
-    overview = pd.DataFrame(
-        {
-            "Field / 字段": [
-                "Generated By / 生成工具",
-                "Report Type / 报告类型",
-            ],
-            "Value / 内容": [
-                "QC Measurement Capability Analyzer",
-                "Excel Summary Report",
-            ],
-        }
-    )
+        try:
+            conclusion_df = pd.DataFrame(conclusions)
+        except Exception:
+            conclusion_df = pd.DataFrame(
+                {
+                    "Conclusion / 结论": [str(conclusions)]
+                }
+            )
 
-    _write_df(writer, "Summary", overview)
-    _write_df(writer, "Statistics", stats_df)
+        if conclusion_df.empty:
+            conclusion_df = pd.DataFrame(
+                {
+                    "English": ["No conclusion available."],
+                    "中文": ["暂无结论。"],
+                }
+            )
 
-    capability_cols = [
-        col
-        for col in [
-            "Measurement / 测量项目",
-            "Group / 分组",
-            "LSL / 下限",
-            "USL / 上限",
-            "Cp",
-            "Cpk",
-            "Cpk Grade / Cpk 等级",
-            "Cp/Cpk Status / Cp/Cpk 状态",
-            "Capability Conclusion EN / 能力英文结论",
-            "Capability Conclusion CN / 能力中文结论",
-        ]
-        if stats_df is not None and col in stats_df.columns
-    ]
+        _write_df(writer, "Summary", overview)
+        _write_df(writer, "Statistics", stats_df)
 
-    capability_df = stats_df[capability_cols] if capability_cols else None
+        capability_df = None
+        if isinstance(stats_df, pd.DataFrame) and not stats_df.empty:
+            capability_cols = []
+            possible_cols = [
+                "Measurement / 测量项目",
+                "Group / 分组",
+                "LSL / 下限",
+                "USL / 上限",
+                "Cp",
+                "Cpk",
+                "Cpk Grade / Cpk 等级",
+                "Cp/Cpk Status / Cp/Cpk 状态",
+                "Capability Conclusion EN / 能力英文结论",
+                "Capability Conclusion CN / 能力中文结论",
+            ]
 
-    _write_df(writer, "Capability", capability_df)
-    _write_df(writer, "Normality Test", normality_df)
-    _write_df(writer, "Auto Conclusion", conclusion_df)
+            for col in possible_cols:
+                if col in stats_df.columns:
+                    capability_cols.append(col)
 
-    if group_df is not None and not group_df.empty:
-        _write_df(writer, "Group Comparison", group_df)
+            if capability_cols:
+                capability_df = stats_df[capability_cols]
 
-return output.getvalue()
-```
+        _write_df(writer, "Capability", capability_df)
+        _write_df(writer, "Normality Test", normality_df)
+        _write_df(writer, "Auto Conclusion", conclusion_df)
 
-def create_complete_analysis_excel(
-cleaned_data: pd.DataFrame,
-stats_df: pd.DataFrame,
-specs_df: pd.DataFrame,
-normality_df: pd.DataFrame,
-group_df: pd.DataFrame | None = None,
-) -> bytes:
-output = io.BytesIO()
+        if group_df is not None:
+            _write_df(writer, "Group Comparison", group_df)
 
-```
-with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
-    _write_df(writer, "Cleaned Data", cleaned_data)
-    _write_df(writer, "Analysis Results", stats_df)
-    _write_df(writer, "Specification Table", specs_df)
-    _write_df(writer, "Normality Test Results", normality_df)
-    _write_df(writer, "Group Analysis Results", group_df)
+    return output.getvalue()
 
-return output.getvalue()
-```
 
-def create_charts_zip(chart_files: Dict[str, bytes]) -> bytes:
-output = io.BytesIO()
+def create_complete_analysis_excel(cleaned_data, stats_df, specs_df, normality_df, group_df=None):
+    output = io.BytesIO()
 
-```
-with zipfile.ZipFile(output, mode="w", compression=zipfile.ZIP_DEFLATED) as archive:
-    for file_name, payload in chart_files.items():
-        archive.writestr(file_name, payload)
+    with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
+        _write_df(writer, "Cleaned Data", cleaned_data)
+        _write_df(writer, "Analysis Results", stats_df)
+        _write_df(writer, "Specification Table", specs_df)
+        _write_df(writer, "Normality Test Results", normality_df)
+        _write_df(writer, "Group Analysis Results", group_df)
 
-return output.getvalue()
-```
+    return output.getvalue()
+
+
+def create_charts_zip(chart_files):
+    output = io.BytesIO()
+
+    with zipfile.ZipFile(output, mode="w", compression=zipfile.ZIP_DEFLATED) as archive:
+        for file_name, payload in chart_files.items():
+            archive.writestr(file_name, payload)
+
+    return output.getvalue()
